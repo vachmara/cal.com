@@ -66,6 +66,7 @@ const _getEventType = async (id: number) => {
       metadata: true,
       schedule: {
         select: {
+          id: true,
           availability: {
             select: {
               days: true,
@@ -276,6 +277,8 @@ const _getUserAvailability = async function getUsersWorkingHoursLifeTheUniverseA
   const useHostSchedulesForTeamEvent = eventType?.metadata?.config?.useHostSchedulesForTeamEvent;
   const schedule = !useHostSchedulesForTeamEvent && eventType?.schedule ? eventType.schedule : userSchedule;
 
+  const isDefaultSchedule = userSchedule && userSchedule.id === schedule.id;
+
   log.debug(
     "Using schedule:",
     safeStringify({
@@ -332,18 +335,6 @@ const _getUserAvailability = async function getUsersWorkingHoursLifeTheUniverseA
     }
   }
 
-  const dateRanges = buildDateRanges({
-    dateFrom,
-    dateTo,
-    availability,
-    timeZone,
-  });
-
-  const formattedBusyTimes = detailedBusyTimes.map((busy) => ({
-    start: dayjs(busy.start),
-    end: dayjs(busy.end),
-  }));
-
   const datesOutOfOffice = await getOutOfOfficeDays({
     userId: user.id,
     dateFrom,
@@ -351,7 +342,31 @@ const _getUserAvailability = async function getUsersWorkingHoursLifeTheUniverseA
     availability,
   });
 
+  const { dateRanges, oooExcludedDateRanges } = buildDateRanges({
+    dateFrom,
+    dateTo,
+    availability,
+    timeZone,
+    travelSchedules: isDefaultSchedule
+      ? user.travelSchedules.map((schedule) => {
+          return {
+            startDate: dayjs(schedule.startDate),
+            endDate: schedule.endDate ? dayjs(schedule.endDate) : undefined,
+            timeZone: schedule.timeZone,
+          };
+        })
+      : [],
+    outOfOffice: datesOutOfOffice,
+  });
+
+  const formattedBusyTimes = detailedBusyTimes.map((busy) => ({
+    start: dayjs(busy.start),
+    end: dayjs(busy.end),
+  }));
+
   const dateRangesInWhichUserIsAvailable = subtract(dateRanges, formattedBusyTimes);
+
+  const dateRangesInWhichUserIsAvailableWithoutOOO = subtract(oooExcludedDateRanges, formattedBusyTimes);
 
   log.debug(
     `getWorkingHours took ${endGetWorkingHours - startGetWorkingHours}ms for userId ${userId}`,
@@ -368,6 +383,7 @@ const _getUserAvailability = async function getUsersWorkingHoursLifeTheUniverseA
     busy: detailedBusyTimes,
     timeZone,
     dateRanges: dateRangesInWhichUserIsAvailable,
+    oooExcludedDateRanges: dateRangesInWhichUserIsAvailableWithoutOOO,
     workingHours,
     dateOverrides,
     currentSeats,
@@ -777,4 +793,44 @@ const _getOutOfOfficeDays = async ({
 
     return acc;
   }, {});
+};
+
+type GetUserAvailabilityQuery = Parameters<typeof getUserAvailability>[0];
+type GetUserAvailabilityInitialData = NonNullable<Parameters<typeof getUserAvailability>[1]>;
+
+const _getUsersAvailability = async ({
+  users,
+  query,
+  initialData,
+}: {
+  users: (NonNullable<GetUserAvailabilityInitialData["user"]> & {
+    currentBookings?: GetUserAvailabilityInitialData["currentBookings"];
+  })[];
+  query: Omit<GetUserAvailabilityQuery, "userId" | "username">;
+  initialData?: Omit<GetUserAvailabilityInitialData, "user">;
+}) => {
+  return await Promise.all(
+    users.map((user) =>
+      _getUserAvailability(
+        {
+          ...query,
+          userId: user.id,
+          username: user.username || "",
+        },
+        initialData
+          ? {
+              ...initialData,
+              user,
+              currentBookings: user.currentBookings,
+            }
+          : undefined
+      )
+    )
+  );
+};
+
+export const getUsersAvailability = async (
+  ...args: Parameters<typeof _getUsersAvailability>
+): Promise<ReturnType<typeof _getUsersAvailability>> => {
+  return monitorCallbackAsync(_getUsersAvailability, ...args);
 };
