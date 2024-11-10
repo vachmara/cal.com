@@ -9,21 +9,8 @@ import getAppKeysFromSlug from "../../_utils/getAppKeysFromSlug";
 import getInstalledAppPath from "../../_utils/getInstalledAppPath";
 import createOAuthAppCredential from "../../_utils/oauth/createOAuthAppCredential";
 import { decodeOAuthState } from "../../_utils/oauth/decodeOAuthState";
+import { isAuthorizedAccountsServerUrl } from "../../_utils/zoho";
 import appConfig from "../config.json";
-
-function isAuthorizedAccountsServerUrl(accountsServer: string) {
-  // As per https://www.zoho.com/crm/developer/docs/api/v6/multi-dc.html#:~:text=US:%20https://accounts.zoho,https://accounts.zohocloud.ca&text=The%20%22location=us%22%20parameter,domain%20in%20all%20API%20endpoints.&text=You%20must%20make%20the%20authorization,.zoho.com.cn.
-  const authorizedAccountServers = [
-    "https://accounts.zoho.com",
-    "https://accounts.zoho.eu",
-    "https://accounts.zoho.in",
-    "https://accounts.zoho.com.cn",
-    "https://accounts.zoho.jp",
-    "https://accounts.zohocloud.ca",
-    "https://accounts.zoho.com.au",
-  ];
-  return authorizedAccountServers.includes(accountsServer);
-}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { code, "accounts-server": accountsServer } = req.query;

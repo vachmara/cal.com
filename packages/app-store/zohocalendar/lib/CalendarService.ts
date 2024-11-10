@@ -37,7 +37,6 @@ export default class ZohoCalendarService implements Calendar {
       try {
         const appKeys = await getAppKeysFromSlug("zohocalendar");
         const { client_id, client_secret } = zohoKeysSchema.parse(appKeys);
-        const server_location = zohoCredentials.server_location;
         const params = {
           client_id,
           grant_type: "refresh_token",
@@ -47,7 +46,7 @@ export default class ZohoCalendarService implements Calendar {
 
         const query = stringify(params);
 
-        const res = await fetch(`https://accounts.zoho.${server_location}/oauth/v2/token?${query}`, {
+        const res = await fetch(`${zohoCredentials.accountsServer}/oauth/v2/token?${query}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json; charset=utf-8",
@@ -65,7 +64,8 @@ export default class ZohoCalendarService implements Calendar {
           access_token: token.access_token,
           refresh_token: zohoCredentials.refresh_token,
           expires_in: Math.round(+new Date() / 1000 + token.expires_in),
-          server_location,
+          location: zohoCredentials.location,
+          accountsServer: zohoCredentials.accountsServer,
         };
         await prisma.credential.update({
           where: { id: credential.id },
@@ -88,7 +88,7 @@ export default class ZohoCalendarService implements Calendar {
 
   private fetcher = async (endpoint: string, init?: RequestInit | undefined) => {
     const credentials = await this.auth.getToken();
-    return fetch(`https://calendar.zoho.${credentials.server_location}/api/v1${endpoint}`, {
+    return fetch(`https://calendar.zoho.${credentials.location}/api/v1${endpoint}`, {
       method: "GET",
       ...init,
       headers: {
@@ -101,7 +101,7 @@ export default class ZohoCalendarService implements Calendar {
 
   private getUserInfo = async () => {
     const credentials = await this.auth.getToken();
-    const response = await fetch(`https://accounts.zoho.${credentials.server_location}/oauth/user/info`, {
+    const response = await fetch(`${credentials.accountsServer}/oauth/user/info`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${credentials.access_token}`,

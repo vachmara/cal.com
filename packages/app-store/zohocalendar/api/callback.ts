@@ -12,28 +12,30 @@ import { Prisma } from "@calcom/prisma/client";
 import getAppKeysFromSlug from "../../_utils/getAppKeysFromSlug";
 import getInstalledAppPath from "../../_utils/getInstalledAppPath";
 import { decodeOAuthState } from "../../_utils/oauth/decodeOAuthState";
+import { isAuthorizedAccountsServerUrl, getValidLocation } from "../../_utils/zoho";
 import config from "../config.json";
 import type { ZohoAuthCredentials } from "../types/ZohoCalendar";
 import { appKeysSchema as zohoKeysSchema } from "../zod";
 
 const log = logger.getSubLogger({ prefix: [`[[zohocalendar/api/callback]`] });
 
-function getOAuthBaseUrl(domain: string): string {
-  return `https://accounts.zoho.${domain}/oauth/v2`;
-}
-
 async function getHandler(req: NextApiRequest, res: NextApiResponse) {
-  const { code, location } = req.query;
+  const { code, "accounts-server": accountsServer } = req.query;
 
   const state = decodeOAuthState(req);
 
-  if (code && typeof code !== "string") {
+  if (code === undefined && typeof code !== "string") {
     res.status(400).json({ message: "`code` must be a string" });
     return;
   }
 
-  if (location && typeof location !== "string") {
-    res.status(400).json({ message: "`location` must be a string" });
+  if (!accountsServer || typeof accountsServer !== "string") {
+    res.status(400).json({ message: "`accounts-server` is required and must be a string" });
+    return;
+  }
+
+  if (!isAuthorizedAccountsServerUrl(accountsServer)) {
+    res.status(400).json({ message: "`accounts-server` is not authorized" });
     return;
   }
 
@@ -52,19 +54,9 @@ async function getHandler(req: NextApiRequest, res: NextApiResponse) {
     code,
   };
 
-  let server_location;
-
-  if (location === "us") {
-    server_location = "com";
-  } else if (location === "au") {
-    server_location = "com.au";
-  } else {
-    server_location = location;
-  }
-
   const query = stringify(params);
 
-  const response = await fetch(`${getOAuthBaseUrl(server_location || "com")}/token?${query}`, {
+  const response = await fetch(`${accountsServer}/token?${query}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -78,18 +70,17 @@ async function getHandler(req: NextApiRequest, res: NextApiResponse) {
     return res.redirect(`/apps/installed?error=${JSON.stringify(responseBody)}`);
   }
 
+  const location = await getValidLocation(accountsServer);
+
   const key: ZohoAuthCredentials = {
     access_token: responseBody.access_token,
     refresh_token: responseBody.refresh_token,
     expires_in: Math.round(+new Date() / 1000 + responseBody.expires_in),
-    server_location: server_location || "com",
+    location,
+    accountsServer,
   };
 
-  function getCalenderUri(domain: string): string {
-    return `https://calendar.zoho.${domain}/api/v1/calendars`;
-  }
-
-  const calendarResponse = await fetch(getCalenderUri(server_location || "com"), {
+  const calendarResponse = await fetch(`https://calendar.zoho.${location}/api/v1/calendars`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${key.access_token}`,
