@@ -9,7 +9,10 @@ import type { TextComponent } from "../lib";
  * @returns IsValid
  */
 export async function isValidCalURL(url: string) {
-  const regex = new RegExp(`^https?://(?:[a-zA-Z0-9-]+\\.)?${CAL_URL.replace("https://", "")}/`, "i");
+  const regex = new RegExp(
+    `^https?://(?:[a-zA-Z0-9-]+\\.)?${CAL_URL.replace("https://", "")}/(team/)?(org/)?`,
+    "i"
+  );
 
   const error: TextComponent = {
     type: "text",
@@ -105,7 +108,7 @@ export async function isValidCalURL(url: string) {
       isValid: false,
       error: {
         ...error,
-        text: `The event ${eventType} doesn't exist.`,
+        text: `The event ${eventTypeSlug} doesn't exist.`,
       },
     };
 
